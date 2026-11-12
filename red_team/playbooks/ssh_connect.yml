@@ -1,0 +1,12 @@
+---
+- name: Red Team | Connect to the operator workstation
+  hosts: red_team
+  gather_facts: false
+  tasks:
+    - name: Test the SSH login
+      vars:
+        walkthrough_caption: Confirm SSH access and show the remote user and hostname.
+      ansible.builtin.shell:
+        cmd: printf 'Connected as %s on %s\n' "$(id -un)" "$(hostname)"
+        executable: /bin/bash
+      changed_when: false

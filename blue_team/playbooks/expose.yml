@@ -1,0 +1,16 @@
+---
+- name: Blue Team | Expose the challenge on its configured IP
+  hosts: blue_team
+  gather_facts: false
+  tasks:
+    - name: Listen on the challenge host's configured IP
+      vars:
+        walkthrough_caption: Bind to the configured IP and verify the page responds.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- expose
+          {{ react2shell_bind_host | mandatory('Set REACT2SHELL_BIND_HOST in inventory/blue_team/.env') | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../react2shell_lab/manage.sh') }}"
+        executable: /bin/bash
+      register: expose_result
+      changed_when: "'Challenge is now listening' in expose_result.stdout"

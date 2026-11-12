@@ -1,0 +1,35 @@
+---
+- name: Purple Box | Provision the demo
+  hosts: purple_box
+  gather_facts: false
+  tasks:
+    - name: Create the demo folder
+      vars:
+        walkthrough_caption: Set aside a folder for this run.
+      ansible.builtin.file:
+        path: /demo/walkthrough
+        state: directory
+        mode: "0755"
+
+    - name: Write the demo page
+      vars:
+        walkthrough_caption: Add a small page to represent the challenge.
+      ansible.builtin.copy:
+        dest: /demo/walkthrough/index.html
+        mode: "0644"
+        content: |
+          <!doctype html>
+          <html lang="en">
+          <title>Purple Box</title>
+          <h1>Purple Box walkthrough</h1>
+          <p>The demo is ready.</p>
+          </html>
+
+    - name: Leave a proof message
+      vars:
+        walkthrough_caption: Save a marker that the next run can remove.
+      ansible.builtin.copy:
+        dest: /demo/walkthrough/proof.txt
+        mode: "0644"
+        content: |
+          Purple Box demo provisioned.

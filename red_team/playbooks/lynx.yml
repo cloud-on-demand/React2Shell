@@ -1,0 +1,25 @@
+---
+- name: Red Team | View the challenge in Lynx
+  hosts: red_team
+  gather_facts: false
+  tasks:
+    - name: Install the text browser
+      become: true
+      vars:
+        walkthrough_caption: Install Lynx on the Red VM.
+      ansible.builtin.package:
+        name: lynx
+        state: present
+
+    - name: Read the challenge page as text
+      vars:
+        walkthrough_caption: Fetch the Blue Lab page from Red and display its text.
+      ansible.builtin.command:
+        argv:
+          - lynx
+          - -dump
+          - -nolist
+          - -width=100
+          - -connect_timeout=10
+          - "{{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') }}"
+      changed_when: false

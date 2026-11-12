@@ -1,0 +1,8 @@
+---
+ansible-navigator:
+  execution-environment:
+    enabled: false
+  logging:
+    file: /tmp/ansible-navigator.log
+  playbook-artifact:
+    enable: false

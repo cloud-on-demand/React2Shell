@@ -1,0 +1,12 @@
+---
+- name: Blue Team | Remove the React2Shell challenge
+  hosts: blue_team
+  gather_facts: false
+  tasks:
+    - name: Stop and remove the challenge
+      vars:
+        walkthrough_caption: Remove the lab service, app, runtime, dependencies, and capture files.
+      ansible.builtin.shell:
+        cmd: bash -s -- deprovision
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../react2shell_lab/manage.sh') }}"
+        executable: /bin/bash

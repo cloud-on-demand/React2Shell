@@ -1,0 +1,38 @@
+---
+- name: Red Team | Revert the challenge page
+  hosts: red_team
+  gather_facts: false
+  tasks:
+    - name: Ensure curl and Lynx are available
+      become: true
+      vars:
+        walkthrough_caption: Install curl and Lynx on the Red VM.
+      ansible.builtin.package:
+        name:
+          - curl
+          - lynx
+        state: present
+
+    - name: Remove the page hook through React2Shell
+      vars:
+        walkthrough_caption: Send the revert payload and restore the original page handler on Blue.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- revert
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Show the page restored
+      vars:
+        walkthrough_caption: Capture the page again and show it clean.
+      ansible.builtin.command:
+        argv:
+          - lynx
+          - -dump
+          - -nolist
+          - -width=100
+          - -connect_timeout=10
+          - "{{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') }}"
+      changed_when: false

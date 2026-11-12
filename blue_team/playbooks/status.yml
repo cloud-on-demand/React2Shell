@@ -1,0 +1,13 @@
+---
+- name: Blue Team | Check the React2Shell challenge
+  hosts: blue_team
+  gather_facts: false
+  tasks:
+    - name: Check the challenge host
+      vars:
+        walkthrough_caption: Check the listener and HTTP response, then display the capture contents.
+      ansible.builtin.shell:
+        cmd: bash -s -- status
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../react2shell_lab/manage.sh') }}"
+        executable: /bin/bash
+      changed_when: false

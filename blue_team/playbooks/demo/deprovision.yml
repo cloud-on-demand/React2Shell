@@ -1,0 +1,21 @@
+---
+- name: Purple Box | Remove the demo
+  hosts: purple_box
+  gather_facts: false
+  tasks:
+    - name: Remove the demo folder
+      vars:
+        walkthrough_caption: Remove the page and proof message together.
+      ansible.builtin.file:
+        path: /demo/walkthrough
+        state: absent
+
+    - name: Verify the demo is gone
+      vars:
+        walkthrough_caption: Confirm the next recording can start cleanly.
+      ansible.builtin.shell:
+        cmd: |-
+          test ! -e /demo/walkthrough &&
+            printf '%s\n' 'Demo removed.'
+        executable: /bin/bash
+      changed_when: false

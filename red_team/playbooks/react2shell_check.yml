@@ -1,0 +1,23 @@
+---
+- name: Red Team | Probe for React2Shell
+  hosts: red_team
+  gather_facts: false
+  tasks:
+    - name: Ensure curl is available
+      become: true
+      vars:
+        walkthrough_caption: Install curl on the Red VM.
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Probe the challenge without running code
+      vars:
+        walkthrough_caption: Send the harmless detection payload and read the vulnerability verdict.
+      ansible.builtin.shell:
+        cmd: >-
+          bash -s -- probe
+          {{ target_url | mandatory('Set TARGET_URL in inventory/red_team/.env') | quote }}
+        stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../scripts/react2shell.sh') }}"
+        executable: /bin/bash
+      changed_when: false

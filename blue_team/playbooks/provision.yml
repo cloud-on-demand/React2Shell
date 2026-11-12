@@ -1,0 +1,41 @@
+---
+- name: Blue Team | Provision the React2Shell challenge
+  hosts: blue_team
+  gather_facts: false
+  vars:
+    lab_source: "{{ playbook_dir ~ '/../react2shell_lab' }}"
+    lab_manager: "{{ lookup('ansible.builtin.file', lab_source ~ '/manage.sh') }}"
+  tasks:
+    - name: Check the challenge host
+      vars:
+        walkthrough_caption: Check SSH and the Linux tools needed for the challenge.
+      ansible.builtin.shell:
+        cmd: bash -s -- check
+        stdin: "{{ lab_manager }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Install and start the challenge
+      vars:
+        walkthrough_caption: Unpack the bundle, build the app, and start it on loopback.
+      ansible.builtin.shell:
+        cmd: |-
+          set -euo pipefail
+          bundle=$(mktemp -d)
+          trap 'rm -rf -- "$bundle"' EXIT
+          base64 -d | tar -xzf - --no-same-owner --no-same-permissions -C "$bundle"
+          bash "$bundle/manage.sh" provision {{ react2shell_port | quote }}
+        stdin: >-
+          {{ lookup('ansible.builtin.pipe',
+          'bash -o pipefail -c ' ~
+          ('tar -C ' ~ (lab_source | quote) ~ ' -czf - manage.sh app/package.json app/package-lock.json app/next.config.mjs app/app | base64 -w0') | quote) }}
+        executable: /bin/bash
+
+    - name: Verify the challenge
+      vars:
+        walkthrough_caption: Check the service and HTTP response, then display the capture contents.
+      ansible.builtin.shell:
+        cmd: bash -s -- status
+        stdin: "{{ lab_manager }}"
+        executable: /bin/bash
+      changed_when: false

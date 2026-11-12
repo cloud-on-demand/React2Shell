@@ -1,0 +1,17 @@
+name: react2shell
+
+services:
+  navigator:
+    image: react2shell-navigator
+    build: .
+    entrypoint: ["python", "/lab/walkthrough.py"]
+    environment:
+      TERM: xterm-256color
+      ANSIBLE_CONFIG: /lab/ansible.cfg
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - .:/lab:ro
+      - demo-data:/demo
+
+volumes:
+  demo-data:
